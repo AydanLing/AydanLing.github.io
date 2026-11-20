@@ -1277,6 +1277,26 @@ button { font: inherit; color: inherit; }
     return hit ? hit.object.userData.pick : null;
   }
   renderer.domElement.addEventListener('pointermove', function (e) { if (e.pointerType === 'mouse') setHot(pick(e)); });
+  // mouse wheel zooms toward whatever is under the cursor: scale the camera and its target about that point,
+  // so the point stays under the cursor (pinch on touch screens is still handled by OrbitControls)
+  var zoomHit = new T.Vector3();
+  stage.addEventListener('wheel', function (e) {
+    if (e.target !== renderer.domElement) return;
+    e.preventDefault(); e.stopPropagation();
+    var r = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((e.clientX - r.left) / r.width) * 2 - 1; mouse.y = -((e.clientY - r.top) / r.height) * 2 + 1;
+    ray.setFromCamera(mouse, camera);
+    var hits = ray.intersectObject(scene, true), hit = null;
+    for (var i = 0; i < hits.length; i++) { var o = hits[i].object, vis = true; while (o) { if (!o.visible) { vis = false; break; } o = o.parent; } if (vis && hits[i].object.isMesh) { hit = hits[i]; break; } }
+    if (hit) zoomHit.copy(hit.point); else ray.ray.at(camera.position.distanceTo(controls.target), zoomHit);
+    var dy = Math.max(-200, Math.min(200, e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY));
+    var f = Math.exp(dy * 0.0015);
+    var cam = camera.position.clone().sub(zoomHit).multiplyScalar(f).add(zoomHit);
+    var tgt = controls.target.clone().sub(zoomHit).multiplyScalar(f).add(zoomHit);
+    var d = cam.distanceTo(tgt);
+    if (d < controls.minDistance || d > controls.maxDistance) return;
+    fly = null; camera.position.copy(cam); controls.target.copy(tgt); controls.update();
+  }, { passive: false, capture: true });
   renderer.domElement.addEventListener('pointerdown', function (e) { downAt = [e.clientX, e.clientY]; });
   renderer.domElement.addEventListener('pointerup', function (e) {
     if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 6) return; // was a drag
